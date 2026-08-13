@@ -16,8 +16,10 @@ import os
 import random
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 
+from ossp_router.hash_regex import safety_for
 from ossp_router.protocol import (
     MODEL_IDS,
     TIERS,
@@ -53,6 +55,28 @@ class TestBundledArtifact(unittest.TestCase):
         artifact = load_bundled_artifact()
         for tier in TIERS:
             self.assertLess(artifact.tier_safety_ratios[tier], 0.95, tier)
+
+    def test_safety_schedule_tightens_as_the_batch_shrinks(self) -> None:
+        """Spend-ratio spread grows as 1/sqrt(n), so a small batch must spend less."""
+        artifact = load_bundled_artifact()
+        for tier in TIERS:
+            small = safety_for(artifact, tier, 220)
+            mid = safety_for(artifact, tier, 880)
+            large = safety_for(artifact, tier, 2640)
+            self.assertLessEqual(small, mid, tier)
+            self.assertLessEqual(mid, large, tier)
+            self.assertGreater(small, 0.0, tier)
+        # a batch past the last row reuses it rather than extrapolating upward
+        for tier in TIERS:
+            self.assertEqual(safety_for(artifact, tier, 10_000),
+                             safety_for(artifact, tier, 2640), tier)
+
+    def test_safety_schedule_falls_back_when_absent(self) -> None:
+        artifact = load_bundled_artifact()
+        bare = replace(artifact, training_summary={})
+        for tier in TIERS:
+            self.assertEqual(safety_for(bare, tier, 880),
+                             bare.tier_safety_ratios[tier], tier)
 
 
 class TestRouterContract(unittest.TestCase):

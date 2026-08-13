@@ -229,6 +229,26 @@ def feature_caps(artifact: "HashRegexArtifact") -> Tuple[Optional[int], Optional
     return _cap("max_chars"), _cap("max_tokens")
 
 
+def safety_for(artifact: "HashRegexArtifact", tier: str, batch_size: int) -> float:
+    """Safety ratio for this tier at the batch size actually being graded.
+
+    Overspending zeroes a tier outright, so the safety ratio has to leave room
+    for the spend ratio to land above its expectation. That spread narrows as
+    1/sqrt(n), which makes the largest safe budget a function of the batch
+    size - a small batch needs a wider margin than a large one for the same
+    pass probability. The schedule is (max_episodes, per-tier safety) rows in
+    ascending order; a batch bigger than the last row takes the last row,
+    which underspends rather than over.
+    """
+    schedule = (artifact.training_summary or {}).get("tier_safety_schedule")
+    if not schedule:
+        return artifact.tier_safety_ratios[tier]
+    for row in schedule:
+        if batch_size <= int(row["max_episodes"]):
+            return float(row["safety"][tier])
+    return float(schedule[-1]["safety"][tier])
+
+
 def _object(value: Any, label: str) -> Mapping[str, Any]:
     if not isinstance(value, dict):
         raise ProtocolError(f"{label}은(는) JSON 객체여야 합니다.")
@@ -558,7 +578,7 @@ def make_hash_regex_submission(
     predictions = [predict_episode(episode, artifact) for episode in inputs.episodes]
     scores = [item[0] for item in predictions]
     costs = [item[1] for item in predictions]
-    safety = artifact.tier_safety_ratios[tier]
+    safety = safety_for(artifact, tier, len(inputs.episodes))
     selected, ratio = select_models(
         scores,
         costs,

@@ -2226,9 +2226,9 @@
   }
  },
  "tier_safety_ratios": {
-  "balanced": 0.6871582031250001,
-  "fast": 0.8640625000000001,
-  "premium": 0.696728515625
+  "balanced": 0.7,
+  "fast": 0.84,
+  "premium": 0.64
  },
  "training_summary": {
   "alpha_cost": 1000.0,
@@ -2246,6 +2246,56 @@
   "max_chars": 16000,
   "max_tokens": 1024,
   "premium_ax31_fill_safety": 0.65,
-  "rows": 2640
+  "rows": 2640,
+  "tier_safety_schedule": [
+   {
+    "max_episodes": 220,
+    "safety": {
+     "balanced": 0.59,
+     "fast": 0.81,
+     "premium": 0.55
+    }
+   },
+   {
+    "max_episodes": 440,
+    "safety": {
+     "balanced": 0.66,
+     "fast": 0.81,
+     "premium": 0.58
+    }
+   },
+   {
+    "max_episodes": 880,
+    "safety": {
+     "balanced": 0.7,
+     "fast": 0.84,
+     "premium": 0.64
+    }
+   },
+   {
+    "max_episodes": 1320,
+    "safety": {
+     "balanced": 0.71,
+     "fast": 0.84,
+     "premium": 0.66
+    }
+   },
+   {
+    "max_episodes": 1760,
+    "safety": {
+     "balanced": 0.73,
+     "fast": 0.85,
+     "premium": 0.71
+    }
+   },
+   {
+    "max_episodes": 2640,
+    "safety": {
+     "balanced": 0.75,
+     "fast": 0.85,
+     "premium": 0.75
+    }
+   }
+  ]
  }
 }
