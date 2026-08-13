@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "challenge_id": "ossp-2026-llm-router-challenge",
+  "repository_url": "https://github.com/zaeee-wang/ossp-2026-llm-router-challenge",
+  "commit_sha": "037f5714a7aca8e8facf93546f0608e84d971d91",
+  "image_digest": "ghcr.io/zaeee-wang/ossp-router@sha256:ceb54cb78c69a93afdeff5736fd966af850aafbc86e6c9e71228aabe94f16ce8",
+  "primary_license": "Apache-2.0"
+}
