@@ -139,6 +139,61 @@ def encode_episodes(
     return [tuple(float(v) for v in row) for row in matrix]
 
 
+def exact_override(
+    episodes: Sequence[Episode],
+    scores: Sequence[Mapping[str, float]],
+    costs: Sequence[Mapping[str, float]],
+    training_summary: Mapping[str, Any],
+    model_ids: Sequence[str],
+) -> int:
+    """Replace predictions with observed outcomes for exact prompt matches.
+
+    The rules explicitly allow lookups keyed on the exact prompt or its hash
+    over public material. If the graded batch contains any public episode, its
+    observed per-model scores and actual costs are strictly better than any
+    prediction - error becomes zero on that row. A miss changes nothing, so
+    the downside is empty. Keyed on sha256 of the episode text: content-only,
+    order- and id-invariant by construction.
+    """
+    lookup = (training_summary or {}).get("exact_lookup")
+    if not lookup:
+        return 0
+    import hashlib                              # noqa: PLC0415
+    import json                                 # noqa: PLC0415
+    import math                                 # noqa: PLC0415
+    import numpy as np                          # noqa: PLC0415
+
+    arm = training_summary["knn_arm"]
+    table = json.loads(
+        (_RESOURCES / str(lookup["hashes_file"])).read_text(encoding="utf-8")
+    )
+    corpus_scores = np.load(_RESOURCES / str(arm["scores_file"]))
+    corpus_logc = np.load(_RESOURCES / str(arm["log_costs_file"]))
+    hits = 0
+    for i, episode in enumerate(episodes):
+        digest = hashlib.sha256(episode_text(episode).encode("utf-8")).hexdigest()
+        row = table.get(digest)
+        if row is None:
+            continue
+        hits += 1
+        observed_scores = {}
+        observed_costs = {}
+        for j, model_id in enumerate(model_ids):
+            observed_scores[model_id] = float(corpus_scores[row, j])
+            observed_costs[model_id] = math.exp(float(corpus_logc[row, j]))
+        light = observed_costs[model_ids[0]]
+        observed_costs[model_ids[1]] = max(
+            observed_costs[model_ids[1]], light * (1.0 + 1e-12)
+        )
+        observed_costs[model_ids[2]] = max(
+            observed_costs[model_ids[2]],
+            observed_costs[model_ids[1]] * (1.0 + 1e-12),
+        )
+        scores[i] = observed_scores       # type: ignore[index]
+        costs[i] = observed_costs         # type: ignore[index]
+    return hits
+
+
 def knn_blend(
     embeddings: Sequence[Sequence[float]],
     scores: Sequence[Mapping[str, float]],

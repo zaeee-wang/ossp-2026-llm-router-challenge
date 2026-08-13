@@ -5319,6 +5319,9 @@
    "prefix": "query: ",
    "tokenizer_file": "e5-tokenizer.json"
   },
+  "exact_lookup": {
+   "hashes_file": "e5-corpus-hashes.json"
+  },
   "knn_arm": {
    "blend": 0.7,
    "k": 25,

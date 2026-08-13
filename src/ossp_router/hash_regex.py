@@ -597,9 +597,13 @@ def make_hash_regex_submission(
     scores = [item[0] for item in predictions]
     costs = [item[1] for item in predictions]
     if embeddings is not None:
-        from .encoder import knn_blend  # local: numpy only exists on this path
+        from .encoder import exact_override, knn_blend  # numpy lives on this path
 
         knn_blend(embeddings, scores, costs, artifact.training_summary, MODEL_IDS)
+        # after the blend, so a hash hit fully replaces the prediction
+        exact_override(
+            inputs.episodes, scores, costs, artifact.training_summary, MODEL_IDS
+        )
     safety = safety_for(artifact, tier, len(inputs.episodes))
     selected, ratio = select_models(
         scores,

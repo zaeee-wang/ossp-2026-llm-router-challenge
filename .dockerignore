@@ -39,3 +39,4 @@ container/**
 !container/Dockerfile
 !container/measurement.Dockerfile
 !container/entrypoint.py
+!src/ossp_router/resources/e5-corpus-hashes.json
