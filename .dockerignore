@@ -22,6 +22,13 @@ src/ossp_router/resources/**
 !src/ossp_router/resources/__init__.py
 !src/ossp_router/resources/routing-policy.v1.json
 !src/ossp_router/resources/router-artifact.v1.json
+!src/ossp_router/encoder.py
+!src/ossp_router/resources/e5-small-int8.onnx.part00
+!src/ossp_router/resources/e5-small-int8.onnx.part01
+!src/ossp_router/resources/e5-tokenizer.json
+!src/ossp_router/resources/e5-corpus-vectors.npy
+!src/ossp_router/resources/e5-corpus-scores.npy
+!src/ossp_router/resources/e5-corpus-logcosts.npy
 !baselines/
 baselines/**
 !baselines/feature_budget.py

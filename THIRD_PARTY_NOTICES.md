@@ -62,3 +62,23 @@ AIME problem text is not included in this repository or release archive.
 `data/train/aime-selection.json` and `data/dev/aime-selection.json` contain
 only public source keys and expected prompt hashes. Users fetch the pinned
 public sources and materialize those prompts locally.
+
+## Bundled sentence encoder (multilingual-e5-small, ONNX int8)
+
+`src/ossp_router/resources/e5-small-int8.onnx.part00`/`.part01` (joined at
+image build to `e5-small-int8.onnx`, SHA-256
+`4d24e2bc01a447951524466ef533e52944bf48509e6552810bcee1a2711cb02c`) and
+`src/ossp_router/resources/e5-tokenizer.json` (SHA-256
+`0b44a9d7b51c3c62626640cda0e2c2f70fdacdc25bbbd68038369d14ebdf4c39`) are the
+int8-quantized ONNX export of `intfloat/multilingual-e5-small`
+(Wang et al., "Text Embeddings by Weakly-Supervised Contrastive Pre-training",
+2022), obtained from `https://huggingface.co/Xenova/multilingual-e5-small`
+(files `onnx/model_int8.onnx`, `tokenizer.json`). Both the original model and
+the ONNX conversion are licensed under the
+[MIT License](LICENSES/MIT.txt). The encoder is used offline inside the
+router container as a fixed feature extractor over the current prompt only;
+no third-party data beyond the model weights is included.
+
+The runtime container installs `numpy` (BSD-3-Clause), `onnxruntime` (MIT)
+and `tokenizers` (Apache-2.0) from PyPI at image build time, pinned in
+`container/Dockerfile`.

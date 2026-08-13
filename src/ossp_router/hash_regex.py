@@ -343,6 +343,12 @@ def parse_artifact(value: Any) -> HashRegexArtifact:
     if root["model_ids"] != list(MODEL_IDS):
         raise ProtocolError("artifact.model_ids가 공개 정책 모델과 다릅니다.")
     length = len(DENSE_FEATURE_NAMES) + hash_bins
+    embedding = (root["training_summary"] or {}).get("embedding")
+    if embedding:
+        # the feature vector ends with the bundled encoder's embedding
+        length += _integer(
+            embedding["dim"], "artifact.training_summary.embedding.dim", 1, 4096
+        )
     mean = _vector(root["feature_mean"], length, "artifact.feature_mean")
     scale = _vector(root["feature_scale"], length, "artifact.feature_scale")
     if any(item <= 0 for item in scale):
@@ -403,10 +409,14 @@ def _linear(head: LinearHead, values: Sequence[float]) -> float:
 
 
 def predict_episode(
-    episode: Episode, artifact: HashRegexArtifact
+    episode: Episode,
+    artifact: HashRegexArtifact,
+    embedding: Optional[Sequence[float]] = None,
 ) -> Tuple[Mapping[str, float], Mapping[str, float]]:
     max_chars, max_tokens = feature_caps(artifact)
     raw = raw_feature_vector(episode, artifact.hash_bins, max_chars, max_tokens)
+    if embedding is not None:
+        raw = raw + tuple(embedding)
     standardized = tuple(
         (value - mean) / scale
         for value, mean, scale in zip(
@@ -575,9 +585,21 @@ def make_hash_regex_submission(
         raise ProtocolError("artifact와 정책의 policy_id가 다릅니다.")
     if artifact.policy_digest != policy_sha256(policy):
         raise ProtocolError("artifact와 현재 정책의 SHA-256이 다릅니다.")
-    predictions = [predict_episode(episode, artifact) for episode in inputs.episodes]
+    from .encoder import encode_episodes  # local: keeps hash-only paths lazy
+
+    embeddings = encode_episodes(inputs.episodes, artifact.training_summary)
+    predictions = [
+        predict_episode(
+            episode, artifact, embeddings[i] if embeddings is not None else None
+        )
+        for i, episode in enumerate(inputs.episodes)
+    ]
     scores = [item[0] for item in predictions]
     costs = [item[1] for item in predictions]
+    if embeddings is not None:
+        from .encoder import knn_blend  # local: numpy only exists on this path
+
+        knn_blend(embeddings, scores, costs, artifact.training_summary, MODEL_IDS)
     safety = safety_for(artifact, tier, len(inputs.episodes))
     selected, ratio = select_models(
         scores,

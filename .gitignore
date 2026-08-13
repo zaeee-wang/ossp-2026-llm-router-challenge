@@ -22,3 +22,4 @@ build/
 /data/cache/
 /data/materialized/
 dist/
+src/ossp_router/resources/e5-small-int8.onnx
