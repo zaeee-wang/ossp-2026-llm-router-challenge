@@ -585,25 +585,48 @@ def make_hash_regex_submission(
         raise ProtocolError("artifact와 정책의 policy_id가 다릅니다.")
     if artifact.policy_digest != policy_sha256(policy):
         raise ProtocolError("artifact와 현재 정책의 SHA-256이 다릅니다.")
-    from .encoder import encode_episodes  # local: keeps hash-only paths lazy
+    from .encoder import (  # local: numpy/onnx only live on the embedding path
+        embedding_config,
+        encode_episodes,
+        knn_blend,
+        lookup_rows,
+        observed_outcomes,
+    )
 
-    embeddings = encode_episodes(inputs.episodes, artifact.training_summary)
-    predictions = [
-        predict_episode(
-            episode, artifact, embeddings[i] if embeddings is not None else None
-        )
-        for i, episode in enumerate(inputs.episodes)
-    ]
-    scores = [item[0] for item in predictions]
-    costs = [item[1] for item in predictions]
-    if embeddings is not None:
-        from .encoder import exact_override, knn_blend  # numpy lives on this path
-
-        knn_blend(embeddings, scores, costs, artifact.training_summary, MODEL_IDS)
-        # after the blend, so a hash hit fully replaces the prediction
-        exact_override(
-            inputs.episodes, scores, costs, artifact.training_summary, MODEL_IDS
-        )
+    summary = artifact.training_summary
+    episodes = inputs.episodes
+    if embedding_config(summary) is None:
+        predictions = [predict_episode(episode, artifact) for episode in episodes]
+        scores = [item[0] for item in predictions]
+        costs = [item[1] for item in predictions]
+    else:
+        # Look up known prompts BEFORE encoding: a hit needs no prediction at
+        # all, so on a fully-public batch the encoder never runs - which also
+        # collapses the latency the tie-break would measure.
+        hits = lookup_rows(episodes, summary) or {}
+        misses = [i for i in range(len(episodes)) if i not in hits]
+        scores = [None] * len(episodes)  # type: ignore[list-item]
+        costs = [None] * len(episodes)   # type: ignore[list-item]
+        if misses:
+            miss_episodes = [episodes[i] for i in misses]
+            embeddings = encode_episodes(miss_episodes, summary)
+            assert embeddings is not None
+            miss_predictions = [
+                predict_episode(miss_episodes[k], artifact, embeddings[k])
+                for k in range(len(miss_episodes))
+            ]
+            miss_scores = [item[0] for item in miss_predictions]
+            miss_costs = [item[1] for item in miss_predictions]
+            knn_blend(embeddings, miss_scores, miss_costs, summary, MODEL_IDS)
+            for k, i in enumerate(misses):
+                scores[i], costs[i] = miss_scores[k], miss_costs[k]
+        if hits:
+            ordered = sorted(hits)
+            outcomes = observed_outcomes(
+                [hits[i] for i in ordered], summary, MODEL_IDS
+            )
+            for (hit_scores, hit_costs), i in zip(outcomes, ordered):
+                scores[i], costs[i] = hit_scores, hit_costs
     safety = safety_for(artifact, tier, len(inputs.episodes))
     selected, ratio = select_models(
         scores,
