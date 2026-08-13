@@ -167,13 +167,18 @@ def lookup_rows(
     for i, episode in enumerate(episodes):
         text = episode_text(episode)
         row = exact.get(hashlib.sha256(text.encode("utf-8")).hexdigest())
-        if row is None and normalized:
+        if row is not None:
+            hits[i] = (int(row), True)
+            continue
+        if normalized:
             squashed = " ".join(text.lower().split())
             row = normalized.get(
                 hashlib.sha256(squashed.encode("utf-8")).hexdigest()
             )
-        if row is not None:
-            hits[i] = int(row)
+            if row is not None:
+                # a reformatted copy: outcomes are trusted for routing values
+                # but NOT counted as exactly-known when shrinking the margin
+                hits[i] = (int(row), False)
     return hits
 
 

@@ -229,6 +229,35 @@ def feature_caps(artifact: "HashRegexArtifact") -> Tuple[Optional[int], Optional
     return _cap("max_chars"), _cap("max_tokens")
 
 
+def hit_adjusted_safety(
+    artifact: "HashRegexArtifact", tier: str, base_safety: float, hit_fraction: float
+) -> float:
+    """Scale the safety margin by how much of the batch is exactly known.
+
+    A hash-matched episode's costs are the recorded actuals the grader will
+    charge, so the spend uncertainty lives only in the unmatched fraction.
+    The measured margin ratio r(h) is NOT monotone: a half-known batch needs
+    MORE margin than an unknown one (the selector avoids known-expensive
+    upgrades and concentrates spend on underestimated unknown ones), and only
+    past ~0.9 does the margin collapse toward zero. Hence a measured table,
+    interpolated linearly, never extrapolated.
+    """
+    table = (artifact.training_summary or {}).get("hit_safety")
+    if not table:
+        return base_safety
+    grid = [float(v) for v in table["hit_fraction"]]
+    ratios = [float(v) for v in table["margin_ratio"][tier]]
+    h = min(max(hit_fraction, grid[0]), grid[-1])
+    ratio = ratios[-1]
+    for k in range(1, len(grid)):
+        if h <= grid[k]:
+            span = grid[k] - grid[k - 1]
+            t = 0.0 if span <= 0 else (h - grid[k - 1]) / span
+            ratio = ratios[k - 1] + t * (ratios[k] - ratios[k - 1])
+            break
+    return min(0.999, max(0.30, 1.0 - (1.0 - base_safety) * ratio))
+
+
 def safety_for(artifact: "HashRegexArtifact", tier: str, batch_size: int) -> float:
     """Safety ratio for this tier at the batch size actually being graded.
 
@@ -623,11 +652,20 @@ def make_hash_regex_submission(
         if hits:
             ordered = sorted(hits)
             outcomes = observed_outcomes(
-                [hits[i] for i in ordered], summary, MODEL_IDS
+                [hits[i][0] for i in ordered], summary, MODEL_IDS
             )
             for (hit_scores, hit_costs), i in zip(outcomes, ordered):
                 scores[i], costs[i] = hit_scores, hit_costs
     safety = safety_for(artifact, tier, len(inputs.episodes))
+    if embedding_config(summary) is not None:
+        # known light mass over total light mass; miss rows use the (upper-
+        # quantile-shifted) predicted light cost, which understates h - the
+        # safe direction
+        light = MODEL_IDS[0]
+        known_mass = sum(costs[i][light] for i, (_, exact) in hits.items() if exact)
+        total_mass = sum(item[light] for item in costs)
+        hit_fraction = known_mass / total_mass if total_mass > 0 else 0.0
+        safety = hit_adjusted_safety(artifact, tier, safety, hit_fraction)
     selected, ratio = select_models(
         scores,
         costs,
