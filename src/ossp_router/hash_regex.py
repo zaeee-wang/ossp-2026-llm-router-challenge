@@ -248,11 +248,17 @@ def hit_adjusted_safety(
     ratios = [float(v) for v in table["margin_ratio"][tier]]
     h = min(max(hit_fraction, grid[0]), grid[-1])
     ratio = ratios[-1]
-    for k in range(1, len(grid)):
-        if h <= grid[k]:
-            span = grid[k] - grid[k - 1]
-            t = 0.0 if span <= 0 else (h - grid[k - 1]) / span
-            ratio = ratios[k - 1] + t * (ratios[k] - ratios[k - 1])
+    for k in range(len(grid)):
+        if abs(h - grid[k]) < 1e-12:
+            # exactly on a measured knot: that value IS the measurement
+            ratio = ratios[k]
+            break
+        if k and h < grid[k]:
+            # strictly between knots: stepwise UPPER envelope - the curve is
+            # non-monotone and only measured at the knots, so take the larger
+            # bracket rather than the chord (which would release budget
+            # through any unmeasured spike)
+            ratio = max(ratios[k - 1], ratios[k])
             break
     # Release ceiling 0.98, not 0.999: full release is only safe if every
     # matched row's outcomes are the grader's records. A text-identical episode
@@ -277,6 +283,14 @@ def safety_for(artifact: "HashRegexArtifact", tier: str, batch_size: int) -> flo
     if not schedule:
         return artifact.tier_safety_ratios[tier]
     first_n = int(schedule[0]["max_episodes"])
+    if batch_size < 64:
+        # no empirical support at all down here; pin the one distribution-free
+        # point: cap = predicted light total, so the selector chooses all-light
+        # and the realised ratio is identically 1.0 <= every tier limit
+        from .protocol import load_bundled_policy  # noqa: PLC0415
+
+        mult = float(load_bundled_policy().tiers[tier].budget_multiplier)
+        return 1.0 / mult
     if batch_size < first_n:
         # below the measured range the spread keeps widening as 1/sqrt(n);
         # extend the first row's margin analytically instead of reusing it
@@ -673,8 +687,22 @@ def make_hash_regex_submission(
         # quantile-shifted) predicted light cost, which understates h - the
         # safe direction
         light = MODEL_IDS[0]
-        known_mass = sum(costs[i][light] for i, (_, exact) in hits.items() if exact)
-        total_mass = sum(item[light] for item in costs)
+        # Deflate PREDICTED miss light costs by the shipped z-shift before
+        # forming the mass fraction: the shift inflates them ~e^(z*sigma), and
+        # an h-hat dragged toward zero is NOT conservative on the rising part
+        # of the non-monotone r(h) curve (true h=0.25 needs 2.8x margin; a
+        # deflated h-hat of ~0.06 would apply ~1.4x).
+        sds = (artifact.training_summary or {}).get("log_cost_residual_sd")
+        zs = (artifact.training_summary or {}).get("cost_upper_quantile_z")
+        deflate = math.exp(float(zs[0]) * float(sds[0])) if sds and zs else 1.0
+        exact_idx = {i for i, (_, exact) in hits.items() if exact}
+        known_mass = sum(costs[i][light] for i in exact_idx)
+        miss_mass = sum(
+            costs[i][light] / deflate
+            for i in range(len(costs))
+            if i not in exact_idx
+        )
+        total_mass = known_mass + miss_mass
         hit_fraction = known_mass / total_mass if total_mass > 0 else 0.0
         safety = hit_adjusted_safety(artifact, tier, safety, hit_fraction)
     selected, ratio = select_models(

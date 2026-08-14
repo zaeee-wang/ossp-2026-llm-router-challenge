@@ -28,6 +28,24 @@ from typing import Any, List, Mapping, Optional, Sequence
 from .heuristic import episode_text
 from .protocol import Episode
 
+
+def canonical_episode_key(episode: Episode) -> str:
+    """Structure-preserving serialisation for exact-lookup hashing.
+
+    Flattened text drops message roles and boundaries, so a plain prompt and
+    a [system, user] pair whose contents happen to concatenate identically
+    would collide. Key on an explicit structure instead: the input form, each
+    role, and each content, joined with separators that cannot appear as
+    boundaries ambiguously (lengths are encoded, so no separator injection).
+    """
+    if episode.prompt is not None:
+        body = episode.prompt
+        return f"P:{len(body)}:{body}"
+    parts = []
+    for message in episode.messages or ():
+        parts.append(f"{message.role}:{len(message.content)}:{message.content}")
+    return "M:" + "|".join(parts)
+
 _RESOURCES = Path(__file__).parent / "resources"
 
 
@@ -165,8 +183,9 @@ def lookup_rows(
     normalized = table.get("normalized", {})
     hits = {}
     for i, episode in enumerate(episodes):
+        key = canonical_episode_key(episode)
         text = episode_text(episode)
-        row = exact.get(hashlib.sha256(text.encode("utf-8")).hexdigest())
+        row = exact.get(hashlib.sha256(key.encode("utf-8")).hexdigest())
         if row is not None:
             hits[i] = (int(row), True)
             continue
@@ -242,12 +261,19 @@ def knn_blend(
     blend = float(arm["blend"])
 
     queries = np.asarray(embeddings, dtype=np.float64)
-    sim = queries @ vectors.T
-    top = np.argpartition(-sim, k - 1, axis=1)[:, :k]
-    weights = np.maximum(np.take_along_axis(sim, top, axis=1), 0.0)
-    weights = weights / np.maximum(weights.sum(axis=1, keepdims=True), 1e-12)
-    knn_scores = np.einsum("ij,ijk->ik", weights, corpus_scores[top])
-    knn_logc = np.einsum("ij,ijk->ik", weights, corpus_logc[top])
+    # chunked so peak memory stays bounded for arbitrarily large batches
+    # (a single n x corpus float64 similarity matrix would be ~21 KB per row)
+    knn_scores = np.empty((len(queries), corpus_scores.shape[1]))
+    knn_logc = np.empty((len(queries), corpus_logc.shape[1]))
+    for start in range(0, len(queries), 256):
+        sim = queries[start:start + 256] @ vectors.T
+        top = np.argpartition(-sim, k - 1, axis=1)[:, :k]
+        weights = np.maximum(np.take_along_axis(sim, top, axis=1), 0.0)
+        weights = weights / np.maximum(weights.sum(axis=1, keepdims=True), 1e-12)
+        knn_scores[start:start + 256] = np.einsum(
+            "ij,ijk->ik", weights, corpus_scores[top])
+        knn_logc[start:start + 256] = np.einsum(
+            "ij,ijk->ik", weights, corpus_logc[top])
 
     for i in range(len(scores)):
         blended_scores = {}
