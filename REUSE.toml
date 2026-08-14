@@ -58,3 +58,32 @@ path = [
 precedence = "override"
 SPDX-FileCopyrightText = "Copyright 2026 SK TELECOM CO., LTD."
 SPDX-License-Identifier = "Apache-2.0"
+
+[[annotations]]
+path = [
+  "src/ossp_router/resources/e5-small-int8.onnx.part00",
+  "src/ossp_router/resources/e5-small-int8.onnx.part01",
+  "src/ossp_router/resources/e5-tokenizer.json",
+]
+precedence = "override"
+SPDX-FileCopyrightText = "Copyright 2022 Microsoft (multilingual-e5-small), ONNX export by Xenova"
+SPDX-License-Identifier = "MIT"
+
+[[annotations]]
+path = [
+  "src/ossp_router/resources/e5-corpus-vectors.npy",
+  "src/ossp_router/resources/e5-corpus-scores.npy",
+  "src/ossp_router/resources/e5-corpus-logcosts.npy",
+  "src/ossp_router/resources/e5-corpus-hashes.json",
+  "src/ossp_router/resources/router-artifact.v1.json",
+  "submission-ossp-skt.json",
+]
+precedence = "override"
+SPDX-FileCopyrightText = "Copyright 2026 llm-budget-router contributors"
+SPDX-License-Identifier = "Apache-2.0"
+
+[[annotations]]
+path = "docs/OPERATIONS.md"
+precedence = "override"
+SPDX-FileCopyrightText = "Copyright 2026 SK TELECOM CO., LTD."
+SPDX-License-Identifier = "Apache-2.0"

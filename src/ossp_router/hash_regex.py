@@ -17,7 +17,6 @@ from typing import Any, Mapping, Optional, Sequence, Tuple
 
 from .heuristic import (
     episode_text,
-    extract_features,
     write_submission_atomic,
 )
 from .protocol import (
@@ -277,6 +276,13 @@ def safety_for(artifact: "HashRegexArtifact", tier: str, batch_size: int) -> flo
     schedule = (artifact.training_summary or {}).get("tier_safety_schedule")
     if not schedule:
         return artifact.tier_safety_ratios[tier]
+    first_n = int(schedule[0]["max_episodes"])
+    if batch_size < first_n:
+        # below the measured range the spread keeps widening as 1/sqrt(n);
+        # extend the first row's margin analytically instead of reusing it
+        base = float(schedule[0]["safety"][tier])
+        widen = math.sqrt(first_n / max(batch_size, 1))
+        return max(0.30, 1.0 - (1.0 - base) * widen)
     for row in schedule:
         if batch_size <= int(row["max_episodes"]):
             return float(row["safety"][tier])

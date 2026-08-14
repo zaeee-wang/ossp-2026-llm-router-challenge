@@ -73,6 +73,7 @@ image build to `e5-small-int8.onnx`, SHA-256
 int8-quantized ONNX export of `intfloat/multilingual-e5-small`
 (Wang et al., "Text Embeddings by Weakly-Supervised Contrastive Pre-training",
 2022), obtained from `https://huggingface.co/Xenova/multilingual-e5-small`
+at pinned revision `761b726dd34fb83930e26aab4e9ac3899aa1fa78`
 (files `onnx/model_int8.onnx`, `tokenizer.json`). Both the original model and
 the ONNX conversion are licensed under the
 [MIT License](LICENSES/MIT.txt). The encoder is used offline inside the
@@ -81,4 +82,9 @@ no third-party data beyond the model weights is included.
 
 The runtime container installs `numpy` (BSD-3-Clause), `onnxruntime` (MIT)
 and `tokenizers` (Apache-2.0) from PyPI at image build time, pinned in
-`container/Dockerfile`.
+`container/Dockerfile`; each wheel retains its upstream LICENSE (and any
+NOTICE) files under `site-packages` inside the image. The base image
+`python:3.11-slim-bookworm` carries Debian operating-system components
+whose per-package copyright and license texts remain in the image under
+`/usr/share/doc/*/copyright`; corresponding sources are published by the
+Debian project.
