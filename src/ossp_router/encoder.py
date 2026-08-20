@@ -190,7 +190,18 @@ def lookup_rows(
             hits[i] = (int(row), True)
             continue
         if normalized:
-            squashed = " ".join(text.lower().split())
+            # L4 recipe (must match the hashes build): whitespace squash,
+            # then NFKC, casefold, and punctuation-adjacent space removal.
+            # Audited on the full public corpus: zero cross-row merges, so a
+            # hit is never ambiguous while catching reformatted copies that
+            # plain lower+split misses (unicode width/case/punct spacing).
+            import re                           # noqa: PLC0415
+            import unicodedata                  # noqa: PLC0415
+
+            squashed = " ".join(text.split())
+            squashed = unicodedata.normalize("NFKC", squashed)
+            squashed = " ".join(squashed.split()).casefold()
+            squashed = re.sub(r"\s*([,.;:!?()\[\]{}])\s*", r"\1", squashed)
             row = normalized.get(
                 hashlib.sha256(squashed.encode("utf-8")).hexdigest()
             )
