@@ -44,6 +44,11 @@ DEFAULT_HASH_BINS = 256
 MIN_HASH_BINS = 16
 MAX_HASH_BINS = 16_384
 PREMIUM_AX31_FILL_SAFETY_RATIO = 0.65
+# exp111: bar K1 on predicted rows whose conservative cost estimate exceeds
+# this fraction of the tier budget - tail-blow-up insurance, measured free
+# (selection pool -0.0007, frozen confirmation pool -0.0004, both within
+# seed noise; q=3-8% cost exactly 0.0000 but 2% maximises covered tail).
+K1_ITEM_COST_CAP_FRACTION = 0.02
 _FNV_OFFSET = 14_695_981_039_346_656_037
 _FNV_PRIME = 1_099_511_628_211
 _UINT64_MASK = (1 << 64) - 1
@@ -705,8 +710,25 @@ def make_hash_regex_submission(
         total_mass = known_mass + miss_mass
         hit_fraction = known_mass / total_mass if total_mass > 0 else 0.0
         safety = hit_adjusted_safety(artifact, tier, safety, hit_fraction)
+    # Single-item K1 cost cap (insurance, exp111): a predicted-cost row whose
+    # conservative K1 estimate already exceeds 2% of the tier budget is barred
+    # from K1. The failure mode this buys out is a single thinking blow-up
+    # zeroing a tier: in the public corpus K1 row costs run from a 0.051cr
+    # median to 3.43cr (67x), so one underestimated tail row can consume the
+    # whole margin. Measured price on both frozen pools: -0.0004 E, within
+    # seed noise; lookup rows keep actual costs and are exempt.
+    k1 = MODEL_IDS[2]
+    light_total = sum(row[MODEL_IDS[0]] for row in costs)
+    cap = (K1_ITEM_COST_CAP_FRACTION
+           * float(policy.tiers[tier].budget_multiplier) * light_total)
+    capped_scores = list(scores)
+    for i in range(len(costs)):
+        if i not in hits and costs[i][k1] > cap:
+            barred = dict(capped_scores[i])
+            barred[k1] = -1.0
+            capped_scores[i] = barred
     selected, ratio = select_models(
-        scores,
+        capped_scores,
         costs,
         budget_multiplier=float(policy.tiers[tier].budget_multiplier),
         safety_ratio=safety,
